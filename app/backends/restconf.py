@@ -1,5 +1,6 @@
 import os
 from ipaddress import IPv4Interface
+from urllib.parse import quote
 import requests
 import urllib3
 
@@ -21,7 +22,7 @@ def get_interface_state(
     http_get=None,
 ):
     """Return normalized interface status using RESTCONF."""
-    url = f"https://{router}/restconf/data/ietf-interfaces:interfaces/interface={interface_name}"
+    url = f"https://{router}/restconf/data/ietf-interfaces:interfaces/interface={quote(interface_name, safe='')}"
 
     try:
         if http_get is not None:
@@ -45,9 +46,9 @@ def get_interface_state(
             addresses = iface.get("ietf-ip:ipv4", {}).get("address", [])
             if addresses:
                 ip = addresses[0].get("ip")
-                netmask = addresses[0].get("netmask")
-                if ip and netmask:
-                    ipv4 = f"{ip}/{IPv4Interface(f'{ip}/{netmask}').network.prefixlen}"
+                mask = addresses[0].get("netmask") or addresses[0].get("prefix-length")
+                if ip and mask:
+                    ipv4 = f"{ip}/{IPv4Interface(f'{ip}/{mask}').network.prefixlen}"
             return {
                 "status": "ok",
                 "result": "found",
@@ -58,7 +59,7 @@ def get_interface_state(
                     "admin_state": admin_state,
                 },
             }
-        elif response.status_code == 404:
+        elif response.status_code in (204, 404):
             return {
                 "status": "ok",
                 "result": "not_found",
@@ -70,7 +71,7 @@ def get_interface_state(
             return {"status": "error", "result": "backend_failed"}
     except PermissionError:
         return {"status": "error", "result": "authentication_failed"}
-    except (ConnectionError, requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+    except (ConnectionError, requests.exceptions.ConnectionError, requests.exceptions.Timeout, OSError):
         return {"status": "error", "result": "connection_failed"}
     except Exception:
         return {"status": "error", "result": "backend_failed"}
@@ -137,7 +138,7 @@ def apply_interface(
     except PermissionError:
         return {"status": "error", "result": "authentication_failed"}
     
-    except (ConnectionError, requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+    except (ConnectionError, requests.exceptions.ConnectionError, requests.exceptions.Timeout, OSError):
         return {"status": "error", "result": "connection_failed"}
 
     except Exception:

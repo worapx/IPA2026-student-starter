@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import requests
+
 from app.integration import process_request
 from app.webex_client import WEBEX_API_BASE, WebexClient
 
@@ -76,53 +77,52 @@ class WebexEventHandler:
         return response
 
 def make_http_handler(submit_event):
+    def reply(handler, code, body):
+        payload = json.dumps(body).encode("utf-8")
+        handler.send_response(code)
+        handler.send_header("Content-Type", "application/json")
+        handler.send_header("Content-Length", str(len(payload)))
+        handler.end_headers()
+        handler.wfile.write(payload)
+
     class WebhookHTTPHandler(BaseHTTPRequestHandler):
         def do_GET(self):
-            if self.path == "/health":
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"status": "ok", "result": "healthy"}).encode("utf-8"))
+            if self.path.split("?")[0] == "/health":
+                reply(self, 200, {"status": "ok", "result": "healthy"})
             else:
-                self.send_response(404)
-                self.end_headers()
+                reply(self, 404, {"status": "error", "result": "not_found"})
 
         def do_POST(self):
-            if self.path == "/webhook":
-                length_hdr = self.headers.get("Content-Length")
-                if not length_hdr or not length_hdr.isdigit():
-                    self.send_error_response(400, "invalid_event")
-                    return
-                content_length = int(length_hdr)
-                if content_length < 1 or content_length > 1_000_000:
-                    self.send_error_response(400, "invalid_event")
-                    return
-                body = self.rfile.read(content_length)
-                try:
-                    payload = json.loads(body.decode("utf-8"))
-                    if not isinstance(payload, dict):
-                        raise ValueError()
-                except Exception:
-                    self.send_error_response(400, "invalid_event")
-                    return
+            if self.path.split("?")[0] != "/webhook":
+                reply(self, 404, {"status": "error", "result": "not_found"})
+                return
 
-                submit_event(payload)
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"status": "ok", "result": "accepted"}).encode("utf-8"))
-            else:
-                self.send_response(404)
-                self.end_headers()
+            invalid = {"status": "error", "result": "invalid_event"}
+            try:
+                length = int(self.headers.get("Content-Length", ""))
+            except ValueError:
+                length = 0
 
-        def send_error_response(self, code, result):
-            self.send_response(code)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({"status": "error", "result": result}).encode("utf-8"))
+            if not 1 <= length <= 1_000_000:
+                reply(self, 400, invalid)
+                return
+
+            try:
+                body = self.rfile.read(length)
+                payload = json.loads(body.decode("utf-8"))
+            except Exception:
+                payload = None
+
+            if not isinstance(payload, dict):
+                reply(self, 400, invalid)
+                return
+
+            submit_event(payload)
+            reply(self, 200, {"status": "ok", "result": "accepted"})
 
         def log_message(self, format, *args):
             pass
+
     return WebhookHTTPHandler
 
 def main():

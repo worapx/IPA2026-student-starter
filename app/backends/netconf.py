@@ -1,5 +1,6 @@
 import os
 import xml.etree.ElementTree as ET
+from xml.sax.saxutils import escape
 from ipaddress import IPv4Interface
 from ncclient import manager
 
@@ -24,7 +25,7 @@ def _connect(router):
 def _handle_error(e):
     if isinstance(e, PermissionError) or "Authentication" in type(e).__name__:
         return {"status": "error", "result": "authentication_failed"}
-    if isinstance(e, ConnectionError) or "SSH" in type(e).__name__ or "Timeout" in type(e).__name__:
+    if isinstance(e, (ConnectionError, OSError)) or "SSH" in type(e).__name__ or "Timeout" in type(e).__name__:
         return {"status": "error", "result": "connection_failed"}
     return {"status": "error", "result": "backend_failed"}
 
@@ -51,7 +52,14 @@ def get_interface_state(
  
         root = ET.fromstring(xml_text)
         ns = {"ietf-if": IETF_IF_NS, "ietf-ip": IETF_IP_NS}
-        iface = root.find(".//ietf-if:interface", ns)
+        
+        iface = None
+        for cand in root.findall(".//ietf-if:interface", ns):
+            if (cand.findtext("ietf-if:name", default="", namespaces=ns) or "").strip() == interface_name:
+                iface = cand
+                break
+        if iface is None:
+            iface = root.find(".//ietf-if:interface", ns)
 
         if iface is None:
             return {"status": "ok", "result": "not_found", "interface": None}
@@ -62,7 +70,7 @@ def get_interface_state(
         admin_state = "up" if enabled_text.lower() == "true" else "down"
         ipv4 = None
         ip = iface.findtext(".//ietf-ip:address/ietf-ip:ip", default=None, namespaces=ns)
-        netmask = iface.findtext(".//ietf-ip:address/ietf-ip:netmask", default=None, namespaces=ns)
+        netmask = iface.findtext(".//ietf-ip:address/ietf-ip:netmask", default=None, namespaces=ns) or iface.findtext(".//ietf-ip:address/ietf-ip:prefix-length", default=None, namespaces=ns)
 
         if ip and netmask:
             ipv4 = f"{ip}/{IPv4Interface(f'{ip}/{netmask}').network.prefixlen}"
@@ -103,7 +111,7 @@ def apply_interface(
     ip_obj = IPv4Interface(desired_interface["ipv4"])
     ip_addr = str(ip_obj.ip)
     mask = str(ip_obj.network.netmask)
-    desc = desired_interface["description"]
+    desc = escape(desired_interface["description"])
     shutdown_xml = "<shutdown/>" if desired_interface.get("admin_state") == "down" else ""
     config_xml = f"""<config xmlns="{NETCONF_NS}" xmlns:nc="{NETCONF_NS}">
   <native xmlns="{NATIVE_NS}">

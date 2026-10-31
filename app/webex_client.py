@@ -1,7 +1,6 @@
 """Part 4 student implementation."""
 
 import os
-
 import requests
 
 WEBEX_API_BASE = 'https://webexapis.com/v1'
@@ -17,7 +16,6 @@ class WebexClient:
     def headers(self):
         return {
             "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json",
         }
 
     def get_message(self, message_id):
