@@ -1,0 +1,16 @@
+fixture: 07-update-multiple-fields.yaml
+
+expected:
+  status: ok
+  result: planned
+  operation: update
+  changes:
+    ipv4:
+      from: 172.23.234.1/32
+      to: 172.23.234.2/32
+    description:
+      from: IPA2026-67070277-OLD
+      to: IPA2026-67070277-NEW
+    admin_state:
+      from: up
+      to: down
