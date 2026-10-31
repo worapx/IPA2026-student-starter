@@ -11,6 +11,16 @@ import requests
 from app.integration import process_request
 from app.webex_client import WEBEX_API_BASE, WebexClient
 
+def _load_env():
+    env_file = Path(".env")
+    if env_file.exists():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+_load_env()
+
 class WebexEventHandler:
     def __init__(self, client, bot_person_id, processor=None):
         self.client = client
