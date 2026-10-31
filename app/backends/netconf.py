@@ -35,20 +35,18 @@ def get_interface_state(
     netconf_get_config=None,
 ):
     """Return normalized interface status using NETCONF."""
-    filter_xml = f"""<filter xmlns="{NETCONF_NS}">
-      <interfaces xmlns="{IETF_IF_NS}">
-        <interface>
-          <name>{interface_name}</name>
-        </interface>
-      </interfaces>
-    </filter>"""
+    filter_xml = f"""<interfaces xmlns="{IETF_IF_NS}">
+  <interface>
+    <name>{interface_name}</name>
+  </interface>
+</interfaces>"""
     
     try:
         if netconf_get_config is not None:
             xml_text = netconf_get_config(router, filter_xml)
         else:
             with _connect(router) as m:
-                xml_text = m.get_config(source="running", filter=filter_xml).data_xml
+                xml_text = m.get_config(source="running", filter=("subtree", filter_xml)).xml
  
         root = ET.fromstring(xml_text)
         ns = {"ietf-if": IETF_IF_NS, "ietf-ip": IETF_IP_NS}
@@ -107,12 +105,12 @@ def apply_interface(
 ):
     """Apply complete desired interface state using NETCONF."""
     name = desired_interface["name"]
-    number = name[len("Loopback"):]
+    number = name[len("Loopback"):].strip()
     ip_obj = IPv4Interface(desired_interface["ipv4"])
     ip_addr = str(ip_obj.ip)
     mask = str(ip_obj.network.netmask)
     desc = escape(desired_interface["description"])
-    shutdown_xml = "<shutdown/>" if desired_interface.get("admin_state") == "down" else ""
+    shutdown_xml = "\n        <shutdown/>" if desired_interface.get("admin_state") == "down" else ""
     config_xml = f"""<config xmlns="{NETCONF_NS}" xmlns:nc="{NETCONF_NS}">
   <native xmlns="{NATIVE_NS}">
     <interface>
@@ -126,8 +124,7 @@ def apply_interface(
               <mask>{mask}</mask>
             </primary>
           </address>
-        </ip>
-        {shutdown_xml}
+        </ip>{shutdown_xml}
       </Loopback>
     </interface>
   </native>
